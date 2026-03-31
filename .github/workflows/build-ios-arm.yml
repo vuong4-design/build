@@ -116,12 +116,12 @@ jobs:
           brew uninstall p7zip
           brew install p7zip --HEAD
           cd release
-          7z a -tzip projectx-build.zip * -p"${{ secrets.ARTIFACT_PASSWORD }}" -mhe=on
+          7z a projectx-build.7z * -p"${{ secrets.ARTIFACT_PASSWORD }}" -mhe=on
           echo "Zipped file:"
-          ls -la    
+          ls -la ../projectx-build.7z
       - name: Upload secure artifact
         uses: actions/upload-artifact@v4
         with:
           name: projectx-build
-          path: release/projectx-build.zip
+          path: release/projectx-build.7z
           if-no-files-found: warn          
