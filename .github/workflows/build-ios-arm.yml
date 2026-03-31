@@ -113,8 +113,7 @@ jobs:
 
       - name: Zip artifacts with password
         run: |
-          brew uninstall p7zip
-          brew install p7zip --HEAD
+          brew install p7zip || true
           cd release
           7z a projectx-build.7z * -p"${{ secrets.ARTIFACT_PASSWORD }}" -mhe=on
           echo "Zipped file:"
