@@ -10,6 +10,7 @@ jobs:
     runs-on: macos-14
 
     env:
+      APP_NAME: ${{ secrets.APP_NAME }}
       THEOS: ${{ github.workspace }}/theos
       ARCHS: arm64
       THEOS_PLATFORM: iphoneos
@@ -97,42 +98,28 @@ jobs:
             find . -name "*.dylib"
           fi
 
-      - name: Debug main dylib
+      - name: Prepare artifacts for zip
         run: |
-          cd source
+          mkdir -p release
+      
+          # Copy tất cả artifact cần upload vào release/
+          cp source/packages/*.deb release/ 2>/dev/null || true
+          cp -R source/.theos/obj/**/${APP_NAME}.app release/ 2>/dev/null || true
+          cp source/.theos/obj/**/${APP_NAME}Tweak.dylib release/ 2>/dev/null || true
+          cp source/.theos/obj/**/${APP_NAME}Daemon release/ 2>/dev/null || true
+      
+          echo "Files prepared in release/:"
+          ls -la release
 
-          echo "=== Checking dylib ==="
-          DYLIB_PATH=".theos/obj/debug/arm64/ProjectXTweak.dylib"
-
-          if [ -f "$DYLIB_PATH" ]; then
-            ls -la "$DYLIB_PATH"
-
-            echo "--- otool ---"
-            otool -l "$DYLIB_PATH" | grep -A10 "__mod_init_func" || echo "NO __mod_init_func"
-
-            echo "--- nm ctor ---"
-            nm "$DYLIB_PATH" 2>/dev/null | grep -iE "AAA|_ctor|TestCtor" || echo "No ctor symbols"
-
-            echo "--- nm first 50 ---"
-            nm "$DYLIB_PATH" 2>/dev/null | head -50
-
-            echo "--- test file ---"
-            ls -la ProjectXTweak/AAA_TestCtor.* 2>/dev/null || echo "Test file not found"
-
-            echo "--- strings ---"
-            strings "$DYLIB_PATH" | grep -i "AAA_TestCtor\|weaponx_ctor" | head -10
-          else
-            echo "Dylib not found"
-            find .theos -name "*.dylib"
-          fi
-
-      - name: Upload build artifacts
+      - name: Zip artifacts with password
+        run: |
+          cd release
+          zip -r --password "${{ secrets.ARTIFACT_PASSWORD }}" projectx-build.zip .
+          echo "Zipped file:"
+          ls -la    
+      - name: Upload secure artifact
         uses: actions/upload-artifact@v4
         with:
           name: projectx-build
-          path: |
-            source/packages/*.deb
-            source/.theos/obj/**/ProjectX.app
-            source/.theos/obj/**/ProjectXTweak.dylib
-            source/.theos/obj/**/ProjectXDaemon
-          if-no-files-found: warn
+          path: release/projectx-build.zip
+          if-no-files-found: warn          
