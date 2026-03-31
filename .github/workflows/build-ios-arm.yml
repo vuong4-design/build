@@ -23,7 +23,7 @@ jobs:
       - name: Checkout touch repo
         uses: actions/checkout@v4
         with:
-          repository: USERNAME/touch
+          repository: vuong4-design/X-Cute
           token: ${{ secrets.TOUCH_REPO_TOKEN }}
           path: source
 
