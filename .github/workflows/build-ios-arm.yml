@@ -113,11 +113,10 @@ jobs:
 
       - name: Zip artifacts with password
         run: |
-          brew install p7zip || true
           cd release
           7z a projectx-build.7z * -p"${{ secrets.ARTIFACT_PASSWORD }}" -mhe=on
           echo "Zipped file:"
-          ls -la ../projectx-build.7z
+          ls -la
       - name: Upload secure artifact
         uses: actions/upload-artifact@v4
         with:
