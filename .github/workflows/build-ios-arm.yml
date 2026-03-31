@@ -113,8 +113,9 @@ jobs:
 
       - name: Zip artifacts with password
         run: |
+          brew install p7zip || true   # cài 7zip nếu chưa có
           cd release
-          zip -r --password "${{ secrets.ARTIFACT_PASSWORD }}" projectx-build.zip .
+          7z a -tzip projectx-build.zip * -p"${{ secrets.ARTIFACT_PASSWORD }}" -mhe=on
           echo "Zipped file:"
           ls -la    
       - name: Upload secure artifact
