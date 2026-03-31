@@ -1,0 +1,138 @@
+name: Build iphoneos-arm
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    env:
+      THEOS: ${{ github.workspace }}/theos
+      ARCHS: arm64
+      THEOS_PLATFORM: iphoneos
+
+    steps:
+      # Checkout repo build (optional)
+      - name: Checkout build repo
+        uses: actions/checkout@v4
+
+      # Checkout repo touch (private)
+      - name: Checkout touch repo
+        uses: actions/checkout@v4
+        with:
+          repository: USERNAME/touch
+          token: ${{ secrets.TOUCH_REPO_TOKEN }}
+          path: source
+
+      - name: Install build dependencies
+        run: |
+          brew update
+          brew install ldid dpkg
+          echo "DPKG_BIN=$(brew --prefix dpkg)/libexec/dpkg" >> "$GITHUB_ENV"
+          echo "$(brew --prefix dpkg)/libexec/dpkg" >> "$GITHUB_PATH"
+
+      - name: Set up Theos
+        run: |
+          git clone --depth=1 https://github.com/theos/theos.git "$THEOS"
+          "$THEOS/bin/update-theos"
+          echo "$THEOS/bin" >> "$GITHUB_PATH"
+
+      - name: Install Theos SDKs
+        run: |
+          TMP_DIR="$(mktemp -d)"
+          git clone --depth=1 https://github.com/theos/sdks.git "$TMP_DIR/sdks"
+          mkdir -p "$THEOS/sdks"
+          cp -R "$TMP_DIR/sdks/"* "$THEOS/sdks/"
+          echo "THEOS_SDKS=$THEOS/sdks" >> "$GITHUB_ENV"
+
+          SDK_NAME="$(ls "$THEOS/sdks" | grep -E '^iPhoneOS[0-9]+\.[0-9]+\.sdk$' | sort -V | tail -n 1)"
+          SDK_VERSION="${SDK_NAME#iPhoneOS}"
+          SDK_VERSION="${SDK_VERSION%.sdk}"
+
+          echo "SDKVERSION=$SDK_VERSION" >> "$GITHUB_ENV"
+          echo "TARGET=iphone:clang:$SDK_VERSION:12.0" >> "$GITHUB_ENV"
+
+      - name: Ensure dm.pl is available
+        run: |
+          if ! command -v dm.pl >/dev/null; then
+            mkdir -p "$HOME/.local/bin"
+            curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/dm.pl -o "$HOME/.local/bin/dm.pl"
+            chmod +x "$HOME/.local/bin/dm.pl"
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Build main project
+        run: |
+          cd source
+          make clean
+          make package ARCHS="$ARCHS" SDKVERSION="$SDKVERSION" TARGET="$TARGET"
+
+      - name: Build and check standalone test tweak
+        run: |
+          echo "=== Building standalone TestCtorTweak ==="
+          cd source/TestCtorTweak
+          make clean
+          make ARCHS="$ARCHS" SDKVERSION="$SDKVERSION" TARGET="$TARGET"
+
+          echo "=== Checking TestCtorTweak dylib ==="
+          TEST_DYLIB=".theos/obj/debug/arm64/TestCtorTweak.dylib"
+          if [ ! -f "$TEST_DYLIB" ]; then
+            TEST_DYLIB=".theos/obj/arm64/TestCtorTweak.dylib"
+          fi
+
+          if [ -f "$TEST_DYLIB" ]; then
+            echo "--- File size ---"
+            ls -la "$TEST_DYLIB"
+
+            echo "--- otool -l ---"
+            otool -l "$TEST_DYLIB" | grep -A10 "__mod_init_func" || echo "NO __mod_init_func"
+
+            echo "--- nm ---"
+            nm "$TEST_DYLIB" 2>/dev/null | grep -i "ctor\|init" | head -10
+          else
+            echo "TestCtorTweak.dylib not found!"
+            find . -name "*.dylib"
+          fi
+
+      - name: Debug main dylib
+        run: |
+          cd source
+
+          echo "=== Checking dylib ==="
+          DYLIB_PATH=".theos/obj/debug/arm64/ProjectXTweak.dylib"
+
+          if [ -f "$DYLIB_PATH" ]; then
+            ls -la "$DYLIB_PATH"
+
+            echo "--- otool ---"
+            otool -l "$DYLIB_PATH" | grep -A10 "__mod_init_func" || echo "NO __mod_init_func"
+
+            echo "--- nm ctor ---"
+            nm "$DYLIB_PATH" 2>/dev/null | grep -iE "AAA|_ctor|TestCtor" || echo "No ctor symbols"
+
+            echo "--- nm first 50 ---"
+            nm "$DYLIB_PATH" 2>/dev/null | head -50
+
+            echo "--- test file ---"
+            ls -la ProjectXTweak/AAA_TestCtor.* 2>/dev/null || echo "Test file not found"
+
+            echo "--- strings ---"
+            strings "$DYLIB_PATH" | grep -i "AAA_TestCtor\|weaponx_ctor" | head -10
+          else
+            echo "Dylib not found"
+            find .theos -name "*.dylib"
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: projectx-build
+          path: |
+            source/packages/*.deb
+            source/.theos/obj/**/ProjectX.app
+            source/.theos/obj/**/ProjectXTweak.dylib
+            source/.theos/obj/**/ProjectXDaemon
+          if-no-files-found: warn
